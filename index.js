@@ -9,6 +9,11 @@ const PORT = process.env.PORT || 3000;
 // Middleware para receber JSON
 app.use(bodyParser.json());
 
+// Rota GET para confirmar que o servidor está no ar
+app.get('/', (req, res) => {
+  res.send('🟢 Servidor de sincronização da Bagy está rodando com sucesso!');
+});
+
 // Rota de recebimento do webhook
 app.post('/webhook/produtos', async (req, res) => {
   const produto = req.body;
@@ -18,46 +23,10 @@ app.post('/webhook/produtos', async (req, res) => {
   // Aqui você pode fazer a lógica de sincronização com a API do Shopify
   // Exemplo: Enviar o produto para sua loja Shopify via API
 
-  try {
-    const response = await axios.post(
-      `https://${process.env.SHOPIFY_DOMAIN}/admin/api/2023-07/products.json`,
-      {
-        product: {
-          title: produto.nome,
-          body_html: produto.descricao || '',
-          vendor: "Mapa da Mina",
-          product_type: produto.categoria || '',
-          variants: [
-            {
-              price: produto.preco,
-              sku: produto.sku,
-              inventory_quantity: produto.estoque || 0
-            }
-          ],
-          images: [
-            {
-              src: produto.imagem || '' // URL da imagem vinda da Bagy
-            }
-          ]
-        }
-      },
-      {
-        headers: {
-          'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    console.log("✅ Produto enviado para Shopify:", response.data);
-    res.status(200).send('OK');
-  } catch (error) {
-    console.error("❌ Erro ao enviar para Shopify:", error.response?.data || error.message);
-    res.status(500).send('Erro ao sincronizar produto.');
-  }
+  res.status(200).json({ status: 'Recebido com sucesso' });
 });
 
-// Inicializa o servidor
+// Inicia o servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
