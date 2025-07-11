@@ -118,6 +118,11 @@ async function upsertProductInShopify(productData) {
 // ROTA ÚNICA PARA OS 3 EVENTOS
 app.post('/webhook/produtos', async (req, res) => {
   try {
+    // ---- LOG COMPLETO DO PAYLOAD RECEBIDO ----
+    console.log("====== PAYLOAD COMPLETO RECEBIDO DA BAGY ======");
+    console.log(JSON.stringify(req.body, null, 2));
+    // ---- FIM LOG COMPLETO ----
+
     const data = req.body?.data;
     if (!data) return res.status(400).send('Payload inválido.');
 
