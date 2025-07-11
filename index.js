@@ -9,18 +9,80 @@ const SHOPIFY_STORE = process.env.SHOPIFY_DOMAIN || 'revenda-biju.myshopify.com'
 const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN || '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';
 const PORT = process.env.PORT || 3000;
 
-// Função para gerar opções dinamicamente a partir das variantes
-function generateOptionsFromVariants(variants) {
-  const optionNames = ['option1', 'option2', 'option3'];
-  const options = [];
-  optionNames.forEach((optKey, i) => {
-    const values = variants.map(v => v[optKey]).filter(Boolean);
-    if (values.length > 0 && new Set(values).size > 1) {
-      options.push({ name: `Opção ${i + 1}`, values: [...new Set(values)] });
+/**
+ * Função que extrai os nomes únicos dos atributos de todas as variantes do produto
+ * Exemplo: ['Tamanho', 'Cor']
+ */
+function getUniqueOptionNames(variations) {
+  const attrs = [];
+  variations.forEach(v => {
+    if (v.attribute && v.attribute.attribute_name && !attrs.includes(v.attribute.attribute_name)) {
+      attrs.push(v.attribute.attribute_name);
     }
+    if (v.attribute_secondary && v.attribute_secondary.attribute_name && !attrs.includes(v.attribute_secondary.attribute_name)) {
+      attrs.push(v.attribute_secondary.attribute_name);
+    }
+    // Se houver 3 atributos, adicione aqui.
   });
-  if (options.length === 0) options.push({ name: 'Título', values: ['Única'] });
-  return options;
+  return attrs.slice(0, 3); // Shopify suporta até 3 opções
+}
+
+/**
+ * Gera o array "options" no formato da Shopify, usando nomes dos atributos e valores únicos de cada opção
+ */
+function buildShopifyOptions(variations) {
+  const optionNames = getUniqueOptionNames(variations);
+  return optionNames.length > 0
+    ? optionNames.map(optionName => ({
+        name: optionName,
+        values: [
+          ...new Set(
+            variations.map(v =>
+              v.attribute && v.attribute.attribute_name === optionName
+                ? v.attribute.name
+                : v.attribute_secondary && v.attribute_secondary.attribute_name === optionName
+                ? v.attribute_secondary.name
+                : undefined
+            ).filter(Boolean)
+          )
+        ]
+      }))
+    : [{ name: 'Título', values: ['Único'] }];
+}
+
+/**
+ * Para cada variante, monta as opções (option1, option2, option3) com base nos atributos, e mapeia o SKU
+ */
+function buildShopifyVariants(variations, productData) {
+  const optionNames = getUniqueOptionNames(variations);
+  return variations.map(variation => {
+    let options = [];
+    optionNames.forEach(optionName => {
+      // Procura o valor correto para cada opção
+      let value = null;
+      if (variation.attribute && variation.attribute.attribute_name === optionName) {
+        value = variation.attribute.name;
+      }
+      if (variation.attribute_secondary && variation.attribute_secondary.attribute_name === optionName) {
+        value = variation.attribute_secondary.name;
+      }
+      options.push(value || 'Único');
+    });
+    // Preenche até option3, se necessário
+    while (options.length < 3) options.push(null);
+
+    return {
+      option1: options[0],
+      option2: options[1],
+      option3: options[2],
+      price: (variation.price || productData.price || 0.00).toString(),
+      sku: (variation.reference || '').trim() || (variation.sku || variation.id?.toString() || ''),
+      inventory_management: 'shopify',
+      inventory_quantity: variation.balance || 0,
+      weight: parseFloat(variation.weight || productData.weight || 0.1),
+      weight_unit: 'kg',
+    };
+  });
 }
 
 // Função principal para upload/atualização
@@ -29,30 +91,24 @@ async function upsertProductInShopify(productData) {
     const title = productData.name || 'Produto sem nome';
     const handle = (productData.slug || title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '')).substring(0, 50);
     const description = productData.description || productData.short_description || '';
-    const vendor = (productData.vendor || 'Biju & Cia.').toString();
+    const vendor = (productData.brand?.name || productData.vendor || 'Biju & Cia.').toString();
     const productType = productData.category_default?.name || 'Produto';
-    const tags = productData.tags ? productData.tags.split(',').map(t => t.trim()) : [];
-    const images = productData.images?.map(img => ({ src: img.url })) || [];
+    const tags = productData.tags ? productData.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const images = productData.images?.map(img => ({ src: img.src || img.url })) || [];
 
-    // Variantes
+    let options = [];
     let variants = [];
+
     if (productData.variations && Array.isArray(productData.variations) && productData.variations.length > 0) {
-      variants = productData.variations.map((variation, idx) => ({
-        option1: variation.option1 || variation.name || `Variante ${idx + 1}` || `Única ${Date.now()}`,
-        option2: variation.option2 || null,
-        option3: variation.option3 || null,
-        price: (variation.price || productData.price || 0.00).toString(),
-        sku: variation.sku || variation.id?.toString() || `${productData.id || ''}-${idx}`,
-        inventory_management: 'shopify',
-        inventory_quantity: variation.stock || 0,
-        weight: parseFloat(variation.weight || productData.weight || 0.1),
-        weight_unit: 'kg',
-      }));
+      options = buildShopifyOptions(productData.variations);
+      variants = buildShopifyVariants(productData.variations, productData);
     } else {
+      // Produto sem variação
+      options = [{ name: "Título", values: ["Único"] }];
       variants = [{
-        option1: `Única - ${handle}-${Date.now()}`,
+        option1: "Único",
         price: (productData.price || 0.00).toString(),
-        sku: productData.id?.toString() || `SKU-${handle}-${Date.now()}`,
+        sku: productData.id?.toString() || "SKU-UNICO",
         inventory_management: 'shopify',
         inventory_quantity: productData.stock || 0,
         weight: parseFloat(productData.weight || 0.1),
@@ -71,7 +127,7 @@ async function upsertProductInShopify(productData) {
       status: 'active',
       published: true,
       variants,
-      options: generateOptionsFromVariants(variants),
+      options,
       metafields: [
         {
           namespace: 'global',
@@ -82,7 +138,7 @@ async function upsertProductInShopify(productData) {
         {
           namespace: 'global',
           key: 'seo_description',
-          value: description.substring(0, 320),
+          value: description.replace(/<[^>]*>?/gm, '').substring(0, 320),
           type: 'multi_line_text_field'
         }
       ]
