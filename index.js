@@ -1,114 +1,124 @@
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
-require('dotenv').config();
-
 const app = express();
 app.use(bodyParser.json());
 
-// VARIÁVEIS DE AMBIENTE
-const SHOPIFY_STORE = process.env.SHOPIFY_DOMAIN;
-const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
+// CONFIG
+const SHOPIFY_STORE = 'revenda-biju.myshopify.com';
+const SHOPIFY_TOKEN = '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';
 const PORT = process.env.PORT || 3000;
 
-// FUNÇÃO PARA CRIAR OU ATUALIZAR PRODUTO NO SHOPIFY
-async function upsertShopifyProduct(data) {
+// FUNÇÃO PRINCIPAL PARA UPLOAD OU ATUALIZAÇÃO
+async function upsertProductInShopify(productData) {
   try {
-    const {
-      id,
-      name,
-      slug,
-      description,
-      short_description,
-      price,
-      weight,
-      images,
-      tags,
-      category_default
-    } = data;
+    const title = productData.name || 'Produto sem nome';
+    const handle = productData.slug || title.toLowerCase().replace(/ /g, '-');
+    const description = productData.description || productData.short_description || '';
+    const vendor = productData.brand || 'Mapa da Mina';
+    const productType = productData.category_default?.name || 'Produto';
+    const tags = productData.tags ? productData.tags.split(',').map(t => t.trim()) : [];
+    const images = productData.images?.map(img => ({ src: img.url })) || [];
 
-    const title = name || 'Produto Sem Título';
-    const handle = slug || `produto-${id}`;
-    const body_html = description || short_description || '';
-    const tagsArray = tags ? tags.split(',').map(tag => tag.trim()) : [];
-    const product_type = category_default?.name || 'Produto';
-    const weightFloat = parseFloat(weight || 0.2);
+    // VARIANTES
+    let variants = [];
+    if (productData.variations && productData.variations.length > 0) {
+      variants = productData.variations.map(variation => ({
+        option1: variation.option1 || variation.name || 'Default',
+        option2: variation.option2 || null,
+        option3: variation.option3 || null,
+        price: variation.price?.toString() || productData.price?.toString() || '0.00',
+        sku: variation.sku || variation.id?.toString() || productData.id?.toString(),
+        inventory_management: 'shopify',
+        inventory_quantity: variation.stock || 0,
+        weight: parseFloat(variation.weight || productData.weight || 0.1),
+        weight_unit: 'kg',
+      }));
+    } else {
+      variants = [{
+        option1: 'Default',
+        price: productData.price?.toString() || '0.00',
+        sku: productData.id?.toString() || 'SEM_SKU',
+        inventory_management: 'shopify',
+        inventory_quantity: productData.stock || 0,
+        weight: parseFloat(productData.weight || 0.1),
+        weight_unit: 'kg',
+      }];
+    }
 
-    const imageObjects = images?.map(img => ({ src: img.url })) || [];
-
-    const variant = {
-      price: price?.toString() || '0.00',
-      sku: id?.toString() || `sku-${Math.random()}`,
-      inventory_management: 'shopify',
-      inventory_quantity: 10,
-      weight: weightFloat,
-      weight_unit: 'kg'
-    };
-
-    const productData = {
+    const shopifyProduct = {
       title,
       handle,
-      body_html,
-      product_type,
-      tags: tagsArray,
-      images: imageObjects,
-      variants: [variant]
+      body_html: description,
+      vendor,
+      product_type: productType,
+      tags,
+      images,
+      status: 'active',
+      published: true,
+      variants,
+      options: [
+        { name: 'Variante' } // Isso será preenchido automaticamente com base nas variantes
+      ],
+      metafields: [
+        {
+          namespace: 'global',
+          key: 'seo_title',
+          value: title,
+          type: 'single_line_text_field'
+        },
+        {
+          namespace: 'global',
+          key: 'seo_description',
+          value: description.substring(0, 320),
+          type: 'multi_line_text_field'
+        }
+      ]
     };
 
-    // Verifica se já existe um produto com esse handle
-    const existing = await axios.get(`https://${SHOPIFY_STORE}/admin/api/2024-01/products.json?handle=${handle}`, {
-      headers: {
-        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-        'Content-Type': 'application/json'
-      }
+    // Verifica se o produto já existe
+    const res = await axios.get(`https://${SHOPIFY_STORE}/admin/api/2024-01/products.json?handle=${handle}`, {
+      headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }
     });
 
-    if (existing.data.products.length > 0) {
-      const productId = existing.data.products[0].id;
-
+    if (res.data.products.length > 0) {
+      const productId = res.data.products[0].id;
       await axios.put(`https://${SHOPIFY_STORE}/admin/api/2024-01/products/${productId}.json`, {
-        product: { id: productId, ...productData }
+        product: { id: productId, ...shopifyProduct }
       }, {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }
       });
-
-      console.log(`🔄 Produto atualizado: ${title} (ID Shopify: ${productId})`);
+      console.log(`🔄 Produto atualizado: ${title}`);
     } else {
-      const response = await axios.post(`https://${SHOPIFY_STORE}/admin/api/2024-01/products.json`, {
-        product: productData
+      const created = await axios.post(`https://${SHOPIFY_STORE}/admin/api/2024-01/products.json`, {
+        product: shopifyProduct
       }, {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }
       });
-
-      console.log(`✅ Produto criado: ${title} (ID Shopify: ${response.data.product.id})`);
+      console.log(`✅ Produto criado: ${title} (ID Shopify: ${created.data.product.id})`);
     }
 
   } catch (error) {
-    console.error('❌ Erro ao criar/atualizar produto:', error.response?.data || error.message);
+    console.error('❌ Erro ao criar/atualizar produto:', error?.response?.data || error.message);
   }
 }
 
-// ROTA DO WEBHOOK DA BAGY
+// ROTA ÚNICA PARA OS 3 EVENTOS
 app.post('/webhook/produtos', async (req, res) => {
-  const produto = req.body?.data;
-
-  if (!produto || !produto.name || !produto.id) {
-    console.log('⚠️ Webhook recebido com dados incompletos.');
-    return res.status(400).send('Payload inválido');
+  try {
+    const data = req.body?.data;
+    if (!data) return res.status(400).send('Payload inválido.');
+    
+    console.log("📦 Produto recebido da Bagy:", data.name || data.slug || '[sem nome]');
+    await upsertProductInShopify(data);
+    res.status(200).send('Produto processado com sucesso.');
+  } catch (err) {
+    console.error('❌ Erro no processamento do webhook:', err.message);
+    res.status(500).send('Erro interno.');
   }
-
-  console.log(`📦 Produto recebido da Bagy: ${produto.name}`);
-  await upsertShopifyProduct(produto);
-  res.status(200).send('Produto processado com sucesso');
 });
 
-// INÍCIO DO SERVIDOR
+// INICIA SERVIDOR
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor online na porta ${PORT}`);
 });
