@@ -15,7 +15,7 @@ async function upsertProductInShopify(productData) {
     const title = productData.name || 'Produto sem nome';
     const handle = productData.slug || title.toLowerCase().replace(/ /g, '-');
     const description = productData.description || productData.short_description || '';
-    const vendor = productData.brand || 'Mapa da Mina';
+    const vendor = productData.vendor || 'Biju & Cia.').toString();
     const productType = productData.category_default?.name || 'Produto';
     const tags = productData.tags ? productData.tags.split(',').map(t => t.trim()) : [];
     const images = productData.images?.map(img => ({ src: img.url })) || [];
