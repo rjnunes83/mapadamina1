@@ -47,7 +47,7 @@ function buildShopifyOptions(variations) {
           )
         ]
       }))
-    : [{ name: 'Título', values: ['Único'] }];
+    : [{ name: 'Title', values: ['Default Title'] }]; // <- PADRÃO SHOPIFY!
 }
 
 /**
@@ -66,7 +66,7 @@ function buildShopifyVariants(variations, productData) {
       if (variation.attribute_secondary && variation.attribute_secondary.attribute_name === optionName) {
         value = variation.attribute_secondary.name;
       }
-      options.push(value || 'Único');
+      options.push(value || 'Default Title');
     });
     // Preenche até option3, se necessário
     while (options.length < 3) options.push(null);
@@ -103,10 +103,10 @@ async function upsertProductInShopify(productData) {
       options = buildShopifyOptions(productData.variations);
       variants = buildShopifyVariants(productData.variations, productData);
     } else {
-      // Produto sem variação
-      options = [{ name: "Título", values: ["Único"] }];
+      // Produto sem variação - PADRÃO SHOPIFY!
+      options = [{ name: "Title", values: ["Default Title"] }];
       variants = [{
-        option1: "Único",
+        option1: "Default Title",
         price: (productData.price || 0.00).toString(),
         sku: productData.id?.toString() || "SKU-UNICO",
         inventory_management: 'shopify',
