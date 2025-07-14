@@ -234,6 +234,11 @@ app.post('/webhook/produtos', async (req, res) => {
   }
 });
 
+// ROTA PARA MONITORAMENTO (UPTIME ROBOT / RENDER)
+app.get('/', (req, res) => {
+  res.send('Servidor online! 🚀');
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Servidor online na porta ${PORT}`);
 });
