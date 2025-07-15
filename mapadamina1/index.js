@@ -57,6 +57,9 @@ async function updateShopifyVariantStock(sku, quantity) {
   }
 }
 
+/**
+ * Extrai nomes únicos dos atributos de variações (até 3 para Shopify)
+ */
 function getUniqueOptionNames(variations) {
   const attrs = [];
   variations.forEach(v => {
@@ -70,6 +73,9 @@ function getUniqueOptionNames(variations) {
   return attrs.slice(0, 3);
 }
 
+/**
+ * Gera array 'options' no padrão Shopify
+ */
 function buildShopifyOptions(variations) {
   const optionNames = getUniqueOptionNames(variations);
   return optionNames.length > 0
@@ -90,6 +96,9 @@ function buildShopifyOptions(variations) {
     : [{ name: 'Title', values: ['Default Title'] }];
 }
 
+/**
+ * Gera array de variantes para o produto Shopify
+ */
 function buildShopifyVariants(variations, productData) {
   const optionNames = getUniqueOptionNames(variations);
   return variations.map(variation => {
@@ -120,6 +129,9 @@ function buildShopifyVariants(variations, productData) {
   });
 }
 
+/**
+ * Função principal: Cria ou atualiza produto na Shopify
+ */
 async function upsertProductInShopify(productData) {
   try {
     const title = productData.name || 'Produto sem nome';
@@ -204,7 +216,7 @@ async function upsertProductInShopify(productData) {
   }
 }
 
-// ROTA ÚNICA PARA TODOS OS EVENTOS (AGORA COM RATE LIMIT!)
+// ROTA ÚNICA PARA TODOS OS EVENTOS DA BAGY (COM PROTEÇÃO)
 app.post('/webhook/produtos', webhookLimiter, async (req, res) => {
   try {
     console.log("====== PAYLOAD COMPLETO RECEBIDO DA BAGY ======");
@@ -213,6 +225,7 @@ app.post('/webhook/produtos', webhookLimiter, async (req, res) => {
     const data = req.body?.data;
     if (!data) return res.status(400).send('Payload inválido.');
 
+    // Se só atualização de estoque de variante, não é produto completo
     if ((!data.name && !data.slug) && (data.reference || data.sku)) {
       const sku = (data.reference || data.sku || '').toString();
       const qty = data.balance ?? 0;
@@ -220,6 +233,7 @@ app.post('/webhook/produtos', webhookLimiter, async (req, res) => {
       return res.status(200).send('Estoque da variante atualizado.');
     }
 
+    // Produto completo: upsert normal
     console.log("📦 Produto recebido da Bagy:", data.name || data.slug || '[sem nome]');
     await upsertProductInShopify(data);
     res.status(200).send('Produto processado com sucesso.');
