@@ -6,6 +6,11 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 app.use(bodyParser.json());
 
+// Rota de status para /
+app.get('/', (req, res) => {
+  res.send('API MapadaMina ativa! 🚀');
+});
+
 // CONFIG
 const SHOPIFY_STORE = process.env.SHOPIFY_DOMAIN || 'revenda-biju.myshopify.com';
 const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN || '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';
